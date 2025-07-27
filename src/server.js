@@ -409,18 +409,119 @@ class Server {
         </div>
         <div class="content">
             <div class="examples">
-                <h3>Example Queries:</h3>
+                <h3>Step-by-Step Tutorial:</h3>
+
                 <div class="example">
-                    <strong>Health Check:</strong><br>
-                    <code>{ health }</code>
+                    <strong>Step 1: Health Check (No Authentication Required)</strong><br>
+                    Start with this basic query to test GraphQL:<br>
+                    <code>{ health }</code><br>
+                    <em>Expected: Green success response with "GraphQL service is healthy"</em>
                 </div>
+
                 <div class="example">
-                    <strong>Register User:</strong><br>
-                    <code>mutation { register(input: { email: "test@example.com", username: "testuser", password: "password123" }) { user { id email } token } }</code>
+                    <strong>Step 2: Register a New User</strong><br>
+                    Create your account with this mutation:<br>
+                    <code style="display: block; white-space: pre; font-size: 12px;">mutation {
+  register(input: {
+    email: "john@example.com"
+    username: "johndoe"
+    password: "SecurePass123!"
+    firstName: "John"
+    lastName: "Doe"
+  }) {
+    user {
+      id
+      email
+      username
+      firstName
+      createdAt
+    }
+    token
+    expiresIn
+  }
+}</code>
+                    <em>Copy the "token" from the response - you'll need it!</em>
                 </div>
+
                 <div class="example">
-                    <strong>Get Todos (requires auth):</strong><br>
-                    <code>{ todos { todos { id title completed } } }</code>
+                    <strong>Step 3: Add Token to Headers</strong><br>
+                    In the Headers section below, replace {} with:<br>
+                    <code>{"Authorization": "Bearer YOUR_TOKEN_HERE"}</code><br>
+                    <em>Replace YOUR_TOKEN_HERE with the actual token from Step 2</em>
+                </div>
+
+                <div class="example">
+                    <strong>Step 4: Get Your Profile (Requires Authentication)</strong><br>
+                    Now try this authenticated query:<br>
+                    <code style="display: block; white-space: pre; font-size: 12px;">{
+  me {
+    id
+    username
+    email
+    firstName
+    lastName
+    stats {
+      totalTodos
+      completedTodos
+      pendingTodos
+      completionRate
+    }
+  }
+}</code>
+                    <em>This should work now that you have the token in headers!</em>
+                </div>
+
+                <div class="example">
+                    <strong>Step 5: Create Your First Todo</strong><br>
+                    Create a todo item:<br>
+                    <code style="display: block; white-space: pre; font-size: 12px;">mutation {
+  createTodo(input: {
+    title: "My First GraphQL Todo"
+    description: "Learning GraphQL is awesome!"
+    priority: HIGH
+    category: "learning"
+    tags: ["graphql", "tutorial"]
+  }) {
+    id
+    title
+    description
+    completed
+    priority
+    category
+    tags
+    createdAt
+  }
+}</code>
+                </div>
+
+                <div class="example">
+                    <strong>Step 6: Get All Your Todos</strong><br>
+                    View your todos:<br>
+                    <code style="display: block; white-space: pre; font-size: 12px;">{
+  todos {
+    todos {
+      id
+      title
+      completed
+      priority
+      category
+      createdAt
+    }
+    pagination {
+      total
+      pages
+    }
+  }
+}</code>
+                </div>
+
+                <div class="example" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <strong>💡 Pro Tips:</strong><br>
+                    • Use <strong>Ctrl+Enter</strong> to execute queries quickly<br>
+                    • Red error box = Something went wrong (check authentication)<br>
+                    • Green success box = Query worked perfectly<br>
+                    • Public queries: health, register, login (no token needed)<br>
+                    • Protected queries: me, todos, createTodo (token required)
                 </div>
             </div>
 
