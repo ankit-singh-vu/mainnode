@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphQL Test - Simple Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-left: 4px solid #007cba;
+            background-color: #f8f9fa;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #007cba;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #005a8b;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success {
+            border-left: 4px solid #28a745;
+            background-color: #d4edda;
+        }
+        .error {
+            border-left: 4px solid #dc3545;
+            background-color: #f8d7da;
+        }
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            resize: vertical;
+        }
+        .custom-query {
+            margin-top: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.online {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.offline {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 GraphQL Test Interface</h1>
+
+        <div id="status" class="status">
+            Checking GraphQL server status...
+        </div>
+
+        <!-- Health Check Test -->
+        <div class="test-section">
+            <h3>1. Health Check Test</h3>
+            <p>This tests the basic GraphQL health endpoint:</p>
+            <button onclick="testHealth()">Test Health Query</button>
+            <div id="health-result" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Registration Test -->
+        <div class="test-section">
+            <h3>2. User Registration Test</h3>
+            <p>Test user registration via GraphQL:</p>
+            <button onclick="testRegistration()">Test Registration</button>
+            <div id="register-result" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Login Test -->
+        <div class="test-section">
+            <h3>3. Login Test</h3>
+            <p>Test user login (uses test user if registration worked):</p>
+            <button onclick="testLogin()" id="login-btn" disabled>Test Login</button>
+            <div id="login-result" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Authenticated Query Test -->
+        <div class="test-section">
+            <h3>4. Authenticated Query Test</h3>
+            <p>Test getting user profile (requires token from login):</p>
+            <button onclick="testProfile()" id="profile-btn" disabled>Test Profile Query</button>
+            <div id="profile-result" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Custom Query Test -->
+        <div class="test-section">
+            <h3>5. Custom Query Test</h3>
+            <p>Write your own GraphQL query:</p>
+            <textarea id="custom-query" placeholder="Enter your GraphQL query here...">{ health }</textarea>
+            <br>
+            <label for="auth-token">Token (optional):</label>
+            <input type="text" id="auth-token" placeholder="Bearer token..." style="width: 100%; margin: 10px 0; padding: 8px;">
+            <button onclick="testCustomQuery()">Execute Custom Query</button>
+            <div id="custom-result" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="test-section">
+            <h3>📚 How to Use</h3>
+            <ol>
+                <li><strong>Start with Health Check</strong> - This should always work</li>
+                <li><strong>Try Registration</strong> - Creates a test user</li>
+                <li><strong>Test Login</strong> - Gets authentication token</li>
+                <li><strong>Try Profile Query</strong> - Uses the token</li>
+                <li><strong>Use Custom Queries</strong> - Try your own GraphQL</li>
+            </ol>
+
+            <h4>Example Queries to Try:</h4>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; margin-top: 10px;">
+                <div>• { health }</div>
+                <div>• { todoStats { totalTodos completedTodos } }</div>
+                <div>• { categories }</div>
+                <div>• { tags }</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GRAPHQL_URL = 'http://localhost:3000/graphql';
+        let authToken = '';
+        let testUser = {
+            email: `test${Date.now()}@example.com`,
+            username: `testuser${Date.now()}`,
+            password: 'TestPass123!'
+        };
+
+        // Check server status on load
+        window.onload = function() {
+            checkServerStatus();
+        }
+
+        async function checkServerStatus() {
+            const statusDiv = document.getElementById('status');
+            try {
+                const response = await fetch('http://localhost:3000/health');
+                if (response.ok) {
+                    statusDiv.className = 'status online';
+                    statusDiv.textContent = '✅ GraphQL Server is Online and Ready!';
+                } else {
+                    throw new Error('Server responded with error');
+                }
+            } catch (error) {
+                statusDiv.className = 'status offline';
+                statusDiv.textContent = '❌ GraphQL Server is Offline - Check if Docker containers are running';
+            }
+        }
+
+        async function executeGraphQL(query, variables = {}, token = '') {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            try {
+                const response = await fetch(GRAPHQL_URL, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        query: query,
+                        variables: variables
+                    })
+                });
+
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                return {
+                    errors: [{ message: `Network error: ${error.message}` }]
+                };
+            }
+        }
+
+        function showResult(elementId, result, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${isSuccess ? 'success' : 'error'}`;
+            element.textContent = JSON.stringify(result, null, 2);
+        }
+
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = 'result loading';
+            element.textContent = 'Loading...';
+        }
+
+        async function testHealth() {
+            showLoading('health-result');
+
+            const query = `{ health }`;
+            const result = await executeGraphQL(query);
+
+            const isSuccess = result.data && result.data.health;
+            showResult('health-result', result, isSuccess);
+
+            if (isSuccess) {
+                document.getElementById('login-btn').disabled = false;
+            }
+        }
+
+        async function testRegistration() {
+            showLoading('register-result');
+
+            const query = `
+                mutation {
+                    register(input: {
+                        email: "${testUser.email}"
+                        username: "${testUser.username}"
+                        password: "${testUser.password}"
+                        firstName: "Test"
+                        lastName: "User"
+                    }) {
+                        user {
+                            id
+                            email
+                            username
+                            firstName
+                        }
+                        token
+                        expiresIn
+                    }
+                }
+            `;
+
+            const result = await executeGraphQL(query);
+            const isSuccess = result.data && result.data.register;
+
+            if (isSuccess) {
+                authToken = result.data.register.token;
+                document.getElementById('auth-token').value = authToken;
+                document.getElementById('login-btn').disabled = false;
+                document.getElementById('profile-btn').disabled = false;
+            }
+
+            showResult('register-result', result, isSuccess);
+        }
+
+        async function testLogin() {
+            showLoading('login-result');
+
+            const query = `
+                mutation {
+                    login(input: {
+                        email: "${testUser.email}"
+                        password: "${testUser.password}"
+                    }) {
+                        user {
+                            id
+                            email
+                            username
+                        }
+                        token
+                        expiresIn
+                    }
+                }
+            `;
+
+            const result = await executeGraphQL(query);
+            const isSuccess = result.data && result.data.login;
+
+            if (isSuccess) {
+                authToken = result.data.login.token;
+                document.getElementById('auth-token').value = authToken;
+                document.getElementById('profile-btn').disabled = false;
+            }
+
+            showResult('login-result', result, isSuccess);
+        }
+
+        async function testProfile() {
+            showLoading('profile-result');
+
+            const query = `
+                {
+                    me {
+                        id
+                        email
+                        username
+                        firstName
+                        lastName
+                        isActive
+                        emailVerified
+                        createdAt
+                        stats {
+                            totalTodos
+                            completedTodos
+                            pendingTodos
+                            completionRate
+                        }
+                    }
+                }
+            `;
+
+            const result = await executeGraphQL(query, {}, authToken);
+            const isSuccess = result.data && result.data.me;
+            showResult('profile-result', result, isSuccess);
+        }
+
+        async function testCustomQuery() {
+            const customQuery = document.getElementById('custom-query').value;
+            const token = document.getElementById('auth-token').value;
+
+            if (!customQuery.trim()) {
+                alert('Please enter a GraphQL query');
+                return;
+            }
+
+            showLoading('custom-result');
+
+            const result = await executeGraphQL(customQuery, {}, token);
+            const isSuccess = !result.errors;
+            showResult('custom-result', result, isSuccess);
+        }
+    </script>
+</body>
+</html>
