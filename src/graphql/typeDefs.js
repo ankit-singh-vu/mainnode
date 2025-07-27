@@ -1,4 +1,4 @@
-const { gql } = require('apollo-server-express');
+const { gql } = require("apollo-server-express");
 
 const typeDefs = gql`
   scalar DateTime
@@ -33,6 +33,7 @@ const typeDefs = gql`
   type Todo {
     id: ID!
     userId: ID!
+    user: User
     title: String!
     description: String
     completed: Boolean!

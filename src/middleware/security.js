@@ -1,33 +1,33 @@
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const { body, param, query, validationResult } = require('express-validator');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const logger = require('../config/logger');
-const redisManager = require('../config/redis');
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const { body, param, query, validationResult } = require("express-validator");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const logger = require("../config/logger");
+const redisManager = require("../config/redis");
 
 // XSS Protection Middleware
 const xssProtection = (req, res, next) => {
   // Sanitize input recursively
   const sanitizeInput = (obj) => {
-    if (typeof obj === 'string') {
+    if (typeof obj === "string") {
       // Remove potentially dangerous HTML tags and JavaScript
       return obj
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-        .replace(/<link\b[^<]*(?:(?!<\/link>)<[^<]*)*<\/link>/gi, '')
-        .replace(/<meta\b[^<]*(?:(?!<\/meta>)<[^<]*)*<\/meta>/gi, '')
-        .replace(/javascript:/gi, '')
-        .replace(/vbscript:/gi, '')
-        .replace(/onload\s*=/gi, '')
-        .replace(/onerror\s*=/gi, '')
-        .replace(/onclick\s*=/gi, '')
-        .replace(/onmouseover\s*=/gi, '');
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, "")
+        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, "")
+        .replace(/<link\b[^<]*(?:(?!<\/link>)<[^<]*)*<\/link>/gi, "")
+        .replace(/<meta\b[^<]*(?:(?!<\/meta>)<[^<]*)*<\/meta>/gi, "")
+        .replace(/javascript:/gi, "")
+        .replace(/vbscript:/gi, "")
+        .replace(/onload\s*=/gi, "")
+        .replace(/onerror\s*=/gi, "")
+        .replace(/onclick\s*=/gi, "")
+        .replace(/onmouseover\s*=/gi, "");
     } else if (Array.isArray(obj)) {
       return obj.map(sanitizeInput);
-    } else if (obj && typeof obj === 'object') {
+    } else if (obj && typeof obj === "object") {
       const sanitized = {};
       for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
@@ -60,17 +60,17 @@ const sqlInjectionProtection = (req, res, next) => {
     /(\'|\"|;|--|\*|\|)/g,
     /(\bOR\b|\bAND\b).*(\=|\<|\>)/gi,
     /(\bunion\b.*\bselect\b)/gi,
-    /(\bdrop\b.*\btable\b)/gi
+    /(\bdrop\b.*\btable\b)/gi,
   ];
 
   const checkForSqlInjection = (value) => {
-    if (typeof value === 'string') {
-      return suspiciousPatterns.some(pattern => pattern.test(value));
+    if (typeof value === "string") {
+      return suspiciousPatterns.some((pattern) => pattern.test(value));
     }
     if (Array.isArray(value)) {
       return value.some(checkForSqlInjection);
     }
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
       return Object.values(value).some(checkForSqlInjection);
     }
     return false;
@@ -81,18 +81,18 @@ const sqlInjectionProtection = (req, res, next) => {
   const hasSqlInjection = inputs.some(checkForSqlInjection);
 
   if (hasSqlInjection) {
-    logger.security.suspiciousActivity('SQL injection attempt detected', {
+    logger.security.suspiciousActivity("SQL injection attempt detected", {
       ip: req.ip,
-      userAgent: req.get('User-Agent'),
+      userAgent: req.get("User-Agent"),
       url: req.originalUrl,
       body: req.body,
       query: req.query,
-      params: req.params
+      params: req.params,
     });
 
     return res.status(400).json({
-      error: 'Invalid input detected',
-      code: 'INVALID_INPUT'
+      error: "Invalid input detected",
+      code: "INVALID_INPUT",
     });
   }
 
@@ -106,30 +106,39 @@ const createRateLimit = (windowMs, max, message, keyGenerator) => {
     max,
     message: {
       error: message,
-      code: 'RATE_LIMIT_EXCEEDED'
+      code: "RATE_LIMIT_EXCEEDED",
     },
     keyGenerator: keyGenerator || ((req) => req.ip),
-    onLimitReached: (req) => {
+    handler: (req, res) => {
       logger.security.rateLimitExceeded(req.ip, req.originalUrl);
+      res.status(429).json({
+        error: message,
+        code: "RATE_LIMIT_EXCEEDED",
+      });
     },
     standardHeaders: true,
     legacyHeaders: false,
     // Use Redis store for distributed rate limiting
-    store: redisManager.isConnected ? {
-      incr: async (key) => {
-        const current = await redisManager.increment(`rate_limit:${key}`, 1);
-        if (current === 1) {
-          await redisManager.expire(`rate_limit:${key}`, windowMs / 1000);
+    store: redisManager.isConnected
+      ? {
+          incr: async (key) => {
+            const current = await redisManager.increment(
+              `rate_limit:${key}`,
+              1,
+            );
+            if (current === 1) {
+              await redisManager.expire(`rate_limit:${key}`, windowMs / 1000);
+            }
+            return current;
+          },
+          decrement: async (key) => {
+            return await redisManager.increment(`rate_limit:${key}`, -1);
+          },
+          resetKey: async (key) => {
+            return await redisManager.del(`rate_limit:${key}`);
+          },
         }
-        return current;
-      },
-      decrement: async (key) => {
-        return await redisManager.increment(`rate_limit:${key}`, -1);
-      },
-      resetKey: async (key) => {
-        return await redisManager.del(`rate_limit:${key}`);
-      }
-    } : undefined
+      : undefined,
   });
 };
 
@@ -138,39 +147,39 @@ const rateLimits = {
   general: createRateLimit(
     15 * 60 * 1000, // 15 minutes
     100, // 100 requests per window
-    'Too many requests, please try again later'
+    "Too many requests, please try again later",
   ),
 
   auth: createRateLimit(
     15 * 60 * 1000, // 15 minutes
     5, // 5 attempts per window
-    'Too many authentication attempts, please try again later',
-    (req) => `${req.ip}:auth`
+    "Too many authentication attempts, please try again later",
+    (req) => `${req.ip}:auth`,
   ),
 
   api: createRateLimit(
     60 * 1000, // 1 minute
     60, // 60 requests per minute
-    'API rate limit exceeded'
+    "API rate limit exceeded",
   ),
 
   graphql: createRateLimit(
     60 * 1000, // 1 minute
     30, // 30 requests per minute (GraphQL can be more expensive)
-    'GraphQL rate limit exceeded'
-  )
+    "GraphQL rate limit exceeded",
+  ),
 };
 
 // JWT Authentication Middleware
 const authenticateToken = async (req, res, next) => {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
 
     if (!token) {
       return res.status(401).json({
-        error: 'Access token required',
-        code: 'TOKEN_REQUIRED'
+        error: "Access token required",
+        code: "TOKEN_REQUIRED",
       });
     }
 
@@ -178,8 +187,8 @@ const authenticateToken = async (req, res, next) => {
     const isBlacklisted = await redisManager.exists(`blacklist:${token}`);
     if (isBlacklisted) {
       return res.status(401).json({
-        error: 'Token has been revoked',
-        code: 'TOKEN_REVOKED'
+        error: "Token has been revoked",
+        code: "TOKEN_REVOKED",
       });
     }
 
@@ -195,22 +204,22 @@ const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    logger.security.loginAttempt('unknown', false, req.ip);
+    logger.security.loginAttempt("unknown", false, req.ip);
 
-    if (error.name === 'TokenExpiredError') {
+    if (error.name === "TokenExpiredError") {
       return res.status(401).json({
-        error: 'Token expired',
-        code: 'TOKEN_EXPIRED'
+        error: "Token expired",
+        code: "TOKEN_EXPIRED",
       });
-    } else if (error.name === 'JsonWebTokenError') {
+    } else if (error.name === "JsonWebTokenError") {
       return res.status(401).json({
-        error: 'Invalid token',
-        code: 'TOKEN_INVALID'
+        error: "Invalid token",
+        code: "TOKEN_INVALID",
       });
     } else {
       return res.status(500).json({
-        error: 'Authentication error',
-        code: 'AUTH_ERROR'
+        error: "Authentication error",
+        code: "AUTH_ERROR",
       });
     }
   }
@@ -218,8 +227,8 @@ const authenticateToken = async (req, res, next) => {
 
 // Optional authentication (for endpoints that work with or without auth)
 const optionalAuth = async (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
 
   if (token) {
     try {
@@ -239,153 +248,153 @@ const optionalAuth = async (req, res, next) => {
 const validationRules = {
   // User validation
   registerUser: [
-    body('email')
+    body("email")
       .isEmail()
       .normalizeEmail()
-      .withMessage('Valid email is required'),
-    body('username')
+      .withMessage("Valid email is required"),
+    body("username")
       .isLength({ min: 3, max: 30 })
       .matches(/^[a-zA-Z0-9_]+$/)
-      .withMessage('Username must be 3-30 characters, alphanumeric and underscore only'),
-    body('password')
+      .withMessage(
+        "Username must be 3-30 characters, alphanumeric and underscore only",
+      ),
+    body("password")
       .isLength({ min: 8 })
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must be at least 8 characters with uppercase, lowercase, number and special character'),
-    body('firstName')
+      .matches(
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
+      )
+      .withMessage(
+        "Password must be at least 8 characters with uppercase, lowercase, number and special character",
+      ),
+    body("firstName")
       .optional()
       .isLength({ max: 50 })
       .matches(/^[a-zA-Z\s]+$/)
-      .withMessage('First name must contain only letters and spaces'),
-    body('lastName')
+      .withMessage("First name must contain only letters and spaces"),
+    body("lastName")
       .optional()
       .isLength({ max: 50 })
       .matches(/^[a-zA-Z\s]+$/)
-      .withMessage('Last name must contain only letters and spaces')
+      .withMessage("Last name must contain only letters and spaces"),
   ],
 
   loginUser: [
-    body('email')
+    body("email")
       .isEmail()
       .normalizeEmail()
-      .withMessage('Valid email is required'),
-    body('password')
-      .notEmpty()
-      .withMessage('Password is required')
+      .withMessage("Valid email is required"),
+    body("password").notEmpty().withMessage("Password is required"),
   ],
 
   // Todo validation
   createTodo: [
-    body('title')
+    body("title")
       .notEmpty()
       .isLength({ min: 1, max: 200 })
-      .withMessage('Title is required and must be less than 200 characters'),
-    body('description')
+      .withMessage("Title is required and must be less than 200 characters"),
+    body("description")
       .optional()
       .isLength({ max: 1000 })
-      .withMessage('Description must be less than 1000 characters'),
-    body('priority')
+      .withMessage("Description must be less than 1000 characters"),
+    body("priority")
       .optional()
       .isInt({ min: 1, max: 3 })
-      .withMessage('Priority must be 1 (low), 2 (medium), or 3 (high)'),
-    body('category')
+      .withMessage("Priority must be 1 (low), 2 (medium), or 3 (high)"),
+    body("category")
       .optional()
       .isLength({ max: 50 })
       .matches(/^[a-zA-Z0-9\s_-]+$/)
-      .withMessage('Category must be alphanumeric with spaces, underscores, or hyphens'),
-    body('dueDate')
+      .withMessage(
+        "Category must be alphanumeric with spaces, underscores, or hyphens",
+      ),
+    body("dueDate")
       .optional()
       .isISO8601()
-      .withMessage('Due date must be a valid ISO 8601 date'),
-    body('tags')
-      .optional()
-      .isArray()
-      .withMessage('Tags must be an array'),
-    body('tags.*')
+      .withMessage("Due date must be a valid ISO 8601 date"),
+    body("tags").optional().isArray().withMessage("Tags must be an array"),
+    body("tags.*")
       .optional()
       .isLength({ max: 30 })
       .matches(/^[a-zA-Z0-9_-]+$/)
-      .withMessage('Each tag must be alphanumeric with underscores or hyphens')
+      .withMessage("Each tag must be alphanumeric with underscores or hyphens"),
   ],
 
   updateTodo: [
-    param('id')
-      .isUUID()
-      .withMessage('Valid todo ID is required'),
-    body('title')
+    param("id").isUUID().withMessage("Valid todo ID is required"),
+    body("title")
       .optional()
       .isLength({ min: 1, max: 200 })
-      .withMessage('Title must be less than 200 characters'),
-    body('description')
+      .withMessage("Title must be less than 200 characters"),
+    body("description")
       .optional()
       .isLength({ max: 1000 })
-      .withMessage('Description must be less than 1000 characters'),
-    body('completed')
+      .withMessage("Description must be less than 1000 characters"),
+    body("completed")
       .optional()
       .isBoolean()
-      .withMessage('Completed must be a boolean'),
-    body('priority')
+      .withMessage("Completed must be a boolean"),
+    body("priority")
       .optional()
       .isInt({ min: 1, max: 3 })
-      .withMessage('Priority must be 1 (low), 2 (medium), or 3 (high)'),
-    body('category')
+      .withMessage("Priority must be 1 (low), 2 (medium), or 3 (high)"),
+    body("category")
       .optional()
       .isLength({ max: 50 })
       .matches(/^[a-zA-Z0-9\s_-]+$/)
-      .withMessage('Category must be alphanumeric with spaces, underscores, or hyphens'),
-    body('dueDate')
+      .withMessage(
+        "Category must be alphanumeric with spaces, underscores, or hyphens",
+      ),
+    body("dueDate")
       .optional()
       .isISO8601()
-      .withMessage('Due date must be a valid ISO 8601 date'),
-    body('tags')
-      .optional()
-      .isArray()
-      .withMessage('Tags must be an array'),
-    body('tags.*')
+      .withMessage("Due date must be a valid ISO 8601 date"),
+    body("tags").optional().isArray().withMessage("Tags must be an array"),
+    body("tags.*")
       .optional()
       .isLength({ max: 30 })
       .matches(/^[a-zA-Z0-9_-]+$/)
-      .withMessage('Each tag must be alphanumeric with underscores or hyphens')
+      .withMessage("Each tag must be alphanumeric with underscores or hyphens"),
   ],
 
   // Query validation
   getTodos: [
-    query('page')
+    query("page")
       .optional()
       .isInt({ min: 1 })
-      .withMessage('Page must be a positive integer'),
-    query('limit')
+      .withMessage("Page must be a positive integer"),
+    query("limit")
       .optional()
       .isInt({ min: 1, max: 100 })
-      .withMessage('Limit must be between 1 and 100'),
-    query('completed')
+      .withMessage("Limit must be between 1 and 100"),
+    query("completed")
       .optional()
       .isBoolean()
-      .withMessage('Completed must be a boolean'),
-    query('priority')
+      .withMessage("Completed must be a boolean"),
+    query("priority")
       .optional()
       .isInt({ min: 1, max: 3 })
-      .withMessage('Priority must be 1, 2, or 3'),
-    query('category')
+      .withMessage("Priority must be 1, 2, or 3"),
+    query("category")
       .optional()
       .isLength({ max: 50 })
       .matches(/^[a-zA-Z0-9\s_-]+$/)
-      .withMessage('Category must be alphanumeric with spaces, underscores, or hyphens'),
-    query('sortBy')
+      .withMessage(
+        "Category must be alphanumeric with spaces, underscores, or hyphens",
+      ),
+    query("sortBy")
       .optional()
-      .isIn(['created_at', 'updated_at', 'title', 'priority', 'due_date'])
-      .withMessage('SortBy must be one of: created_at, updated_at, title, priority, due_date'),
-    query('sortOrder')
+      .isIn(["created_at", "updated_at", "title", "priority", "due_date"])
+      .withMessage(
+        "SortBy must be one of: created_at, updated_at, title, priority, due_date",
+      ),
+    query("sortOrder")
       .optional()
-      .isIn(['asc', 'desc'])
-      .withMessage('SortOrder must be asc or desc')
+      .isIn(["asc", "desc"])
+      .withMessage("SortOrder must be asc or desc"),
   ],
 
   // UUID parameter validation
-  uuidParam: [
-    param('id')
-      .isUUID()
-      .withMessage('Valid ID is required')
-  ]
+  uuidParam: [param("id").isUUID().withMessage("Valid ID is required")],
 };
 
 // Validation error handler
@@ -393,17 +402,17 @@ const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    logger.warn('Validation errors:', {
+    logger.warn("Validation errors:", {
       errors: errors.array(),
       ip: req.ip,
       url: req.originalUrl,
-      body: req.body
+      body: req.body,
     });
 
     return res.status(400).json({
-      error: 'Validation failed',
-      code: 'VALIDATION_ERROR',
-      details: errors.array()
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: errors.array(),
     });
   }
 
@@ -427,16 +436,16 @@ const helmetConfig = helmet({
   hsts: {
     maxAge: 31536000, // 1 year
     includeSubDomains: true,
-    preload: true
-  }
+    preload: true,
+  },
 });
 
 // CORS configuration with security considerations
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',')
-      : ['http://localhost:3000', 'http://localhost:3001'];
+      ? process.env.CORS_ORIGIN.split(",")
+      : ["http://localhost:3000", "http://localhost:3001"];
 
     // Allow requests with no origin (mobile apps, etc.)
     if (!origin) return callback(null, true);
@@ -444,36 +453,45 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      logger.security.suspiciousActivity('CORS policy violation', {
+      logger.security.suspiciousActivity("CORS policy violation", {
         origin,
-        allowedOrigins
+        allowedOrigins,
       });
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID'],
-  exposedHeaders: ['X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
-  maxAge: 86400 // 24 hours
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "X-Request-ID",
+  ],
+  exposedHeaders: [
+    "X-Request-ID",
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+  ],
+  maxAge: 86400, // 24 hours
 };
 
 // Security audit logging middleware
 const auditLogger = (req, res, next) => {
   // Log sensitive operations
-  const sensitiveEndpoints = ['/auth/', '/admin/', '/api/users/'];
-  const isSensitive = sensitiveEndpoints.some(endpoint =>
-    req.originalUrl.includes(endpoint)
+  const sensitiveEndpoints = ["/auth/", "/admin/", "/api/users/"];
+  const isSensitive = sensitiveEndpoints.some((endpoint) =>
+    req.originalUrl.includes(endpoint),
   );
 
   if (isSensitive) {
-    logger.info('Sensitive endpoint access', {
+    logger.info("Sensitive endpoint access", {
       method: req.method,
       url: req.originalUrl,
       ip: req.ip,
-      userAgent: req.get('User-Agent'),
+      userAgent: req.get("User-Agent"),
       userId: req.user?.id,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -482,20 +500,20 @@ const auditLogger = (req, res, next) => {
 
 // Request size limiter
 const requestSizeLimiter = (req, res, next) => {
-  const contentLength = parseInt(req.get('content-length') || '0', 10);
+  const contentLength = parseInt(req.get("content-length") || "0", 10);
   const maxSize = 10 * 1024 * 1024; // 10MB
 
   if (contentLength > maxSize) {
-    logger.security.suspiciousActivity('Large request detected', {
+    logger.security.suspiciousActivity("Large request detected", {
       contentLength,
       maxSize,
       ip: req.ip,
-      url: req.originalUrl
+      url: req.originalUrl,
     });
 
     return res.status(413).json({
-      error: 'Request too large',
-      code: 'REQUEST_TOO_LARGE'
+      error: "Request too large",
+      code: "REQUEST_TOO_LARGE",
     });
   }
 
@@ -513,5 +531,5 @@ module.exports = {
   validationRules,
   handleValidationErrors,
   auditLogger,
-  requestSizeLimiter
+  requestSizeLimiter,
 };
