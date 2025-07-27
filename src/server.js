@@ -233,6 +233,9 @@ class Server {
           auth: "/api/auth",
           todos: "/api/todos",
           graphql: "/graphql",
+          ...(process.env.GRAPHQL_PLAYGROUND === "true" && {
+            playground: "/playground",
+          }),
           ...(process.env.NODE_ENV !== "production" && { docs: "/api-docs" }),
         },
         timestamp: new Date().toISOString(),
@@ -302,7 +305,14 @@ class Server {
       resolvers,
       context: getContext,
       introspection: process.env.GRAPHQL_INTROSPECTION === "true",
-      playground: process.env.GRAPHQL_PLAYGROUND === "true",
+      playground:
+        process.env.GRAPHQL_PLAYGROUND === "true"
+          ? {
+              settings: {
+                "request.credentials": "include",
+              },
+            }
+          : false,
       formatError: (error) => {
         // Log GraphQL errors
         logger.error("GraphQL Error:", {
@@ -369,8 +379,120 @@ class Server {
       cors: false, // We're handling CORS at the app level
     });
 
+    // Add custom GraphQL interface route that works offline
+    if (process.env.GRAPHQL_PLAYGROUND === "true") {
+      this.app.get("/playground", (req, res) => {
+        res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GraphQL Interface</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f7f7f7; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #1976d2; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .content { padding: 20px; }
+        .query-section { margin-bottom: 20px; }
+        textarea { width: 100%; height: 200px; font-family: monospace; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; padding: 10px; }
+        button { background: #1976d2; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #1565c0; }
+        .result { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 15px; margin-top: 20px; white-space: pre-wrap; font-family: monospace; }
+        .examples { background: #e3f2fd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .example { background: white; margin: 10px 0; padding: 10px; border-radius: 4px; border-left: 4px solid #1976d2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>GraphQL Interface</h1>
+            <p>Query and test your GraphQL API</p>
+        </div>
+        <div class="content">
+            <div class="examples">
+                <h3>Example Queries:</h3>
+                <div class="example">
+                    <strong>Health Check:</strong><br>
+                    <code>{ health }</code>
+                </div>
+                <div class="example">
+                    <strong>Register User:</strong><br>
+                    <code>mutation { register(input: { email: "test@example.com", username: "testuser", password: "password123" }) { user { id email } token } }</code>
+                </div>
+                <div class="example">
+                    <strong>Get Todos (requires auth):</strong><br>
+                    <code>{ todos { todos { id title completed } } }</code>
+                </div>
+            </div>
+
+            <div class="query-section">
+                <label for="query"><strong>GraphQL Query:</strong></label>
+                <textarea id="query" placeholder="Enter your GraphQL query here...">{ health }</textarea>
+            </div>
+
+            <div class="query-section">
+                <label for="headers"><strong>Headers (JSON format):</strong></label>
+                <textarea id="headers" placeholder='{"Authorization": "Bearer YOUR_TOKEN"}'>{}</textarea>
+            </div>
+
+            <button onclick="executeQuery()">Execute Query</button>
+
+            <div id="result" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        async function executeQuery() {
+            const query = document.getElementById('query').value;
+            const headersText = document.getElementById('headers').value;
+            const resultDiv = document.getElementById('result');
+
+            let headers = { 'Content-Type': 'application/json' };
+            try {
+                if (headersText.trim()) {
+                    const customHeaders = JSON.parse(headersText);
+                    headers = { ...headers, ...customHeaders };
+                }
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Invalid JSON in headers: ' + e.message;
+                return;
+            }
+
+            try {
+                const response = await fetch('/graphql', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ query: query })
+                });
+
+                const result = await response.json();
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        // Allow Ctrl+Enter to execute query
+        document.getElementById('query').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                executeQuery();
+            }
+        });
+    </script>
+</body>
+</html>
+        `);
+      });
+
+      logger.info(
+        `GraphQL Playground available at http://${this.host}:${this.port}/playground`,
+      );
+    }
+
     logger.info(
-      `GraphQL playground available at http://${this.host}:${this.port}${this.apolloServer.graphqlPath}`,
+      `GraphQL endpoint available at http://${this.host}:${this.port}${this.apolloServer.graphqlPath}`,
     );
   }
 
@@ -471,6 +593,12 @@ class Server {
         logger.info(`🔐 Auth API: http://${this.host}:${this.port}/api/auth`);
         logger.info(`📝 Todos API: http://${this.host}:${this.port}/api/todos`);
         logger.info(`🎯 GraphQL: http://${this.host}:${this.port}/graphql`);
+
+        if (process.env.GRAPHQL_PLAYGROUND === "true") {
+          logger.info(
+            `🎮 GraphQL Playground: http://${this.host}:${this.port}/playground`,
+          );
+        }
 
         if (process.env.NODE_ENV !== "production") {
           logger.info(`📚 API Docs: http://${this.host}:${this.port}/api-docs`);
