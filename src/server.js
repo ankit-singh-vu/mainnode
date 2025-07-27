@@ -434,7 +434,7 @@ class Server {
                 <textarea id="headers" placeholder='{"Authorization": "Bearer YOUR_TOKEN"}'>{}</textarea>
             </div>
 
-            <button onclick="executeQuery()">Execute Query</button>
+            <button id="executeBtn">Execute Query</button>
 
             <div id="result" class="result" style="display:none;"></div>
         </div>
@@ -459,20 +459,38 @@ class Server {
             }
 
             try {
-                const response = await fetch('/graphql', {
+                const response = await fetch('http://localhost:3000/graphql', {
                     method: 'POST',
                     headers: headers,
                     body: JSON.stringify({ query: query })
                 });
 
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+
                 const result = await response.json();
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = JSON.stringify(result, null, 2);
+
+                if (result.errors) {
+                    resultDiv.style.background = '#f8d7da';
+                    resultDiv.style.borderLeft = '4px solid #dc3545';
+                    resultDiv.textContent = 'GraphQL Errors:\\n' + JSON.stringify(result, null, 2);
+                } else {
+                    resultDiv.style.background = '#d4edda';
+                    resultDiv.style.borderLeft = '4px solid #28a745';
+                    resultDiv.textContent = JSON.stringify(result, null, 2);
+                }
             } catch (error) {
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Error: ' + error.message;
+                resultDiv.style.background = '#f8d7da';
+                resultDiv.style.borderLeft = '4px solid #dc3545';
+                resultDiv.textContent = 'Network Error: ' + error.message + '\\n\\nPlease check:\\n1. Docker containers are running\\n2. GraphQL server is accessible\\n3. No network blocking';
             }
         }
+
+        // Add event listeners
+        document.getElementById('executeBtn').addEventListener('click', executeQuery);
 
         // Allow Ctrl+Enter to execute query
         document.getElementById('query').addEventListener('keydown', function(e) {
