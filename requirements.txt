@@ -1,0 +1,11 @@
+1. **How to improve Node.js performance and scaling?**
+
+2. **How to secure Node.js applications (e.g., prevent XSS, SQL injection)?**
+
+3. **How to handle critical issues in production environments?**
+
+4. **REST vs GraphQL – When to use which?**
+
+5. **Which frameworks are best for unit testing and integration testing in Node.js?**
+
+6. **How to improve performance of RDBMS and CRUD operations?**

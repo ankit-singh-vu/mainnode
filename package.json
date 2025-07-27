@@ -1,0 +1,81 @@
+{
+  "name": "todo-app-nodejs",
+  "version": "1.0.0",
+  "description": "A comprehensive Todo app demonstrating Node.js best practices",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "test:watch": "jest --watchAll",
+    "test:coverage": "jest --coverage",
+    "test:integration": "jest --testPathPattern=tests/integration",
+    "test:unit": "jest --testPathPattern=tests/unit",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "db:migrate": "knex migrate:latest",
+    "db:seed": "knex seed:run",
+    "db:rollback": "knex migrate:rollback"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "graphql",
+    "rest-api",
+    "todo",
+    "postgresql",
+    "security",
+    "performance"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^6.1.5",
+    "cors": "^2.8.5",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.0.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "express-validator": "^6.15.0",
+    "knex": "^2.4.2",
+    "pg": "^8.10.0",
+    "apollo-server-express": "^3.12.0",
+    "graphql": "^16.6.0",
+    "graphql-tag": "^2.12.6",
+    "redis": "^4.6.5",
+    "express-session": "^1.17.3",
+    "connect-redis": "^7.0.1",
+    "winston": "^3.8.2",
+    "express-winston": "^4.2.0",
+    "joi": "^17.9.1",
+    "uuid": "^9.0.0",
+    "swagger-ui-express": "^4.6.2",
+    "swagger-jsdoc": "^6.2.8"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22",
+    "jest": "^29.5.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.39.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.27.5",
+    "@types/jest": "^29.5.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}

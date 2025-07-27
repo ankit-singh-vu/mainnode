@@ -1,0 +1,208 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: todo-postgres
+    environment:
+      POSTGRES_DB: todo_app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - todo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d todo_app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: todo-redis
+    command: redis-server --appendonly yes --requirepass redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - todo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # Todo Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: todo-app
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      HOST: 0.0.0.0
+
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: todo_app
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis_password
+
+      # JWT Configuration
+      JWT_SECRET: development_jwt_secret_change_in_production
+      JWT_EXPIRES_IN: 7d
+
+      # Session Configuration
+      SESSION_SECRET: development_session_secret_change_in_production
+
+      # Security Configuration
+      BCRYPT_ROUNDS: 12
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+
+      # Logging
+      LOG_LEVEL: info
+
+      # Performance Configuration
+      ENABLE_COMPRESSION: true
+      ENABLE_CACHING: true
+      CACHE_TTL: 3600
+
+      # CORS Configuration
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3001
+      CORS_CREDENTIALS: true
+
+      # GraphQL Configuration
+      GRAPHQL_INTROSPECTION: true
+      GRAPHQL_PLAYGROUND: true
+
+      # API Documentation
+      SWAGGER_TITLE: Todo App API
+      SWAGGER_DESCRIPTION: A comprehensive Todo application API
+      SWAGGER_VERSION: 1.0.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    networks:
+      - todo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Database Migration Service (runs once)
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: todo-migrate
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: todo_app
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    command: ["npm", "run", "db:migrate"]
+    networks:
+      - todo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: todo-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@todoapp.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - todo-network
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+  # Optional: Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: todo-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis_password
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    networks:
+      - todo-network
+    depends_on:
+      - redis
+    profiles:
+      - tools
+
+  # Optional: Nginx reverse proxy for production-like setup
+  nginx:
+    image: nginx:alpine
+    container_name: todo-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    networks:
+      - todo-network
+    depends_on:
+      - app
+    profiles:
+      - proxy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  todo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
